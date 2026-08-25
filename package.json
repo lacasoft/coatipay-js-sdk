@@ -1,0 +1,53 @@
+{
+  "name": "@lacasoft/coatipay-sdk",
+  "version": "0.1.0",
+  "description": "CoatiPay JavaScript/TypeScript SDK — the Stripe-compatible payment SDK for the open web",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "payments",
+    "web3",
+    "usdc",
+    "base",
+    "x402",
+    "coatipay"
+  ],
+  "license": "Apache-2.0",
+  "homepage": "https://coatipay.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lacasoft/coatipay-js-sdk"
+  },
+  "bugs": "https://github.com/lacasoft/coatipay-js-sdk/issues",
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "viem": "^2.55.5",
+    "@lacasoft/coatipay-protocol": "^0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "tsup": "^8.0.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.10"
+  }
+}

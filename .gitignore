@@ -1,0 +1,14 @@
+# Entorno — NUNCA commitear valores reales
+.env
+.env.*
+!.env.example
+
+# Sistema / editor
+.DS_Store
+*.log
+.idea/
+.vscode/
+
+node_modules/
+dist/
+coverage/

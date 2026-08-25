@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "types": ["node"],
+    // tsup's .d.ts generation injects `baseUrl` (deprecated in TS 6.0, which
+    // errors). This is the documented TS 6 migration escape hatch; we don't set
+    // baseUrl ourselves. Remove once tsup stops emitting it.
+    "ignoreDeprecations": "6.0"
+  },
+  "include": ["src"]
+}
