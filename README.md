@@ -8,7 +8,7 @@ trustlessly on-chain.
 - ⛽ **Gasless for payers** — they sign an ERC-3009 authorization; the nodeit pays the gas.
 - 🤖 **x402 micropayments** — gasless per-request USDC for AI agents, at amounts Stripe can't serve.
 - 🧩 **Stripe-like DX** — `paymentIntents.create`, `webhooks.verify`.
-- 🌐 **Open network** — no lock-in, self-host or use any nodeit.
+- 🌐 **Open network** — no lock-in: any nodeit can settle your payments, and anyone can run one.
 
 ## Install
 
@@ -124,14 +124,14 @@ new CoatiPay({
 ## Links
 
 - Repo, docs & protocol spec: https://github.com/lacasoft/coatipay-protocol
-- Source: [`packages/sdk-js`](https://github.com/lacasoft/coatipay-protocol/tree/master/packages/sdk-js)
+- Source: [`coatipay-js-sdk`](https://github.com/lacasoft/coatipay-js-sdk)
 - License: Apache-2.0
 
 ---
 
 ### Contributing / local dev
 
-The SDK lives in the [CoatiPay monorepo](https://github.com/lacasoft/coatipay-protocol). To work on it:
+To work on the SDK:
 
 ```bash
 pnpm dev        # watch mode (cjs + esm + dts)
