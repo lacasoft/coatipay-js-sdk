@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto'
 // EIP-712 / ERC-3009 helpers for the CoatiPay SDK.
 //
 // Used to construct the `ReceiveWithAuthorization` typed-data message that
@@ -41,8 +40,14 @@ export interface BuildAuthorizationParams {
   settlementHub: Address
   /** Which chain — picks USDC contract address + chainId. */
   chain: SupportedChain
-  /** Optional 32-byte random nonce. SDK generates one if omitted. */
-  nonce?: Hex
+  /**
+   * Identificador on-chain del intent que se está pagando (bytes32).
+   *
+   * Se usa como nonce de la autorización, y el contrato lo EXIGE: sin esa
+   * atadura, quien envía la transacción —el nodeit— podía aplicar esta firma
+   * a otro intent y quedarse el pago. Ya no es opcional ni aleatorio.
+   */
+  intentId: Hex
   /** Unix seconds; signature invalid before this. Default: 0 (always valid from start). */
   validAfter?: bigint
   /** Unix seconds; signature invalid after this. Default: now + 30 minutes. */
@@ -82,7 +87,8 @@ export function buildReceiveAuthorizationTypedData(
   const nowSeconds = BigInt(Math.floor(Date.now() / 1000))
   const validAfter = params.validAfter ?? 0n
   const validBefore = params.validBefore ?? nowSeconds + BigInt(DEFAULT_VALIDITY_WINDOW_SECONDS)
-  const nonce = params.nonce ?? generateNonce()
+  // El nonce ES el intent: así la firma solo sirve para pagar ese intent.
+  const nonce = params.intentId
 
   return {
     domain: {
@@ -118,7 +124,11 @@ export interface SignedAuthorization {
   /** Authorization validity window. */
   validAfter: bigint
   validBefore: bigint
-  /** 32-byte random nonce, hex-encoded. */
+  /**
+   * Nonce de la autorización, hex de 32 bytes. **Es el `intentId`**: el
+   * contrato exige `nonce == intentId` para que una firma no pueda aplicarse
+   * a otro intent. Ya no es un valor aleatorio.
+   */
   nonce: Hex
   /**
    * Raw signature, hex-encoded. For an EOA this is the 65-byte ECDSA blob; for
@@ -163,10 +173,6 @@ export function splitSignature(signature: Hex): { v: number; r: Hex; s: Hex } {
   return { v, r, s }
 }
 
-/// Generate a cryptographically random 32-byte nonce as 0x-prefixed hex.
-export function generateNonce(): Hex {
-  return toHex(randomBytes(32))
-}
 
 // ── Internal: EIP-712 hashing + signing ───────────────────────
 
