@@ -3,6 +3,7 @@ import { privateKeyToAccount } from 'viem/accounts'
 import { describe, expect, it } from 'vitest'
 import {
   buildReceiveAuthorizationTypedData,
+  intentIdToBytes32,
   signReceiveAuthorization,
   splitSignature,
   USDC_ADDRESSES,
@@ -19,7 +20,7 @@ describe('buildReceiveAuthorizationTypedData', () => {
       amount: 5_000_000n,
       settlementHub: HUB,
       chain: 'base-sepolia',
-      intentId: '0xabcd000000000000000000000000000000000000000000000000000000000000',
+      intentId: 'pi_test_001',
       validAfter: 0n,
       validBefore: 1_700_001_000n,
     })
@@ -36,7 +37,7 @@ describe('buildReceiveAuthorizationTypedData', () => {
       value: 5_000_000n,
       validAfter: 0n,
       validBefore: 1_700_001_000n,
-      nonce: '0xabcd000000000000000000000000000000000000000000000000000000000000',
+      nonce: intentIdToBytes32('pi_test_001'),
     })
 
     // Field types match the ERC-3009 spec exactly
@@ -54,27 +55,27 @@ describe('buildReceiveAuthorizationTypedData', () => {
       amount: 1n,
       settlementHub: HUB,
       chain: 'base',
-      intentId: '0xcafe000000000000000000000000000000000000000000000000000000000000' as Hex,
+      intentId: 'pi_test_001',
     })
     expect(typed.domain.chainId).toBe(8453)
     expect(typed.domain.name).toBe('USD Coin')
     expect(typed.domain.verifyingContract).toBe(USDC_ADDRESSES.base)
   })
 
-  it('rechaza un intentId que no sea bytes32, en vez de firmar algo inservible', () => {
-    expect(() =>
-      buildReceiveAuthorizationTypedData({
-        payer: PAYER_ADDR,
-        amount: 5_000_000n,
-        settlementHub: HUB,
-        chain: 'base-sepolia',
-        intentId: '0xbeef' as Hex,
-      }),
-    ).toThrow(/32-byte hex/)
+  it('deriva el nonce del id textual, sin que nadie calcule el hash', () => {
+    const td = buildReceiveAuthorizationTypedData({
+      payer: PAYER_ADDR,
+      amount: 5_000_000n,
+      settlementHub: HUB,
+      chain: 'base-sepolia',
+      intentId: 'pi_abc123',
+    })
+    expect(td.message.nonce).toBe(intentIdToBytes32('pi_abc123'))
+    expect(td.message.nonce).toMatch(/^0x[0-9a-f]{64}$/)
   })
 
   it('ata el nonce al intent, para que la firma solo sirva para ese pago', () => {
-    const intentId = '0xdead000000000000000000000000000000000000000000000000000000000000' as Hex
+    const intentId = 'pi_dead_beef'
     const td = buildReceiveAuthorizationTypedData({
       payer: PAYER_ADDR,
       amount: 5_000_000n,
@@ -82,7 +83,7 @@ describe('buildReceiveAuthorizationTypedData', () => {
       chain: 'base-sepolia',
       intentId,
     })
-    expect(td.message.nonce).toBe(intentId)
+    expect(td.message.nonce).toBe(intentIdToBytes32(intentId))
   })
 
   it('defaults validAfter=0 and validBefore≈now+30min', () => {
@@ -92,7 +93,7 @@ describe('buildReceiveAuthorizationTypedData', () => {
       amount: 1n,
       settlementHub: HUB,
       chain: 'base-sepolia',
-      intentId: '0xcafe000000000000000000000000000000000000000000000000000000000000' as Hex,
+      intentId: 'pi_test_001',
     })
     const after = Math.floor(Date.now() / 1000)
 
@@ -109,7 +110,7 @@ describe('signReceiveAuthorization', () => {
       amount: 5_000_000n,
       settlementHub: HUB,
       chain: 'base-sepolia' as const,
-      intentId: '0xfeed000000000000000000000000000000000000000000000000000000000000' as Hex,
+      intentId: 'pi_test_001',
       validAfter: 0n,
       validBefore: 9_999_999_999n,
     }
@@ -134,7 +135,7 @@ describe('signReceiveAuthorization', () => {
         amount: 1_000n,
         settlementHub: HUB,
         chain: 'base-sepolia',
-        intentId: '0xbeef000000000000000000000000000000000000000000000000000000000000' as Hex,
+        intentId: 'pi_test_001',
       },
       PAYER_KEY,
     )

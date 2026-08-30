@@ -147,7 +147,7 @@ describe('paymentIntents.signAuthorization (server-side convenience)', () => {
         amount: 1_000_000n,
         settlementHub: '0x1111111111111111111111111111111111111111',
         chain: 'base-sepolia',
-        intentId: '0xbeef000000000000000000000000000000000000000000000000000000000000' as Hex,
+        intentId: 'pi_test_001',
       },
       PRIVKEY,
     )

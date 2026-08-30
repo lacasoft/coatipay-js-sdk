@@ -31,6 +31,18 @@ export { USDC_ADDRESSES }
 /// Default authorization validity window (30 minutes from sign time).
 const DEFAULT_VALIDITY_WINDOW_SECONDS = 30 * 60
 
+/**
+ * Identificador on-chain de un intent, a partir del `pi_…` que devuelve la API.
+ *
+ * Es `keccak256(utf8(id))`, la misma derivación que usan el contrato y el
+ * daemon. Se exporta porque quien construya la autorización a mano necesita el
+ * mismo valor, y calcularlo distinto produce una firma que no sirve.
+ */
+export function intentIdToBytes32(intentId: string): Hex {
+  if (!intentId) throw new TypeError('intentId is required')
+  return keccak256(toHex(intentId))
+}
+
 export interface BuildAuthorizationParams {
   /** Payer address — the `from` of the USDC transfer. Must match the signer. */
   payer: Address
@@ -41,13 +53,17 @@ export interface BuildAuthorizationParams {
   /** Which chain — picks USDC contract address + chainId. */
   chain: SupportedChain
   /**
-   * Identificador on-chain del intent que se está pagando (bytes32).
+   * El intent que se está pagando: el `pi_…` que devolvió la API.
    *
-   * Se usa como nonce de la autorización, y el contrato lo EXIGE: sin esa
-   * atadura, quien envía la transacción —el nodeit— podía aplicar esta firma
-   * a otro intent y quedarse el pago. Ya no es opcional ni aleatorio.
+   * De él se deriva el nonce de la autorización, y el contrato EXIGE esa
+   * atadura: sin ella, quien envía la transacción —el nodeit, la parte no
+   * confiable— podía aplicar esta firma a otro intent y quedarse el pago.
+   *
+   * Se acepta el identificador textual, no el `bytes32`, para que nadie tenga
+   * que calcular el hash por su cuenta: equivocarse ahí produce una firma
+   * atada a un intent inexistente, y el error solo aparece al liquidar.
    */
-  intentId: Hex
+  intentId: string
   /** Unix seconds; signature invalid before this. Default: 0 (always valid from start). */
   validAfter?: bigint
   /** Unix seconds; signature invalid after this. Default: now + 30 minutes. */
@@ -88,18 +104,7 @@ export function buildReceiveAuthorizationTypedData(
   const validAfter = params.validAfter ?? 0n
   const validBefore = params.validBefore ?? nowSeconds + BigInt(DEFAULT_VALIDITY_WINDOW_SECONDS)
   // El nonce ES el intent: así la firma solo sirve para pagar ese intent.
-  //
-  // Se valida el formato porque el tipo `Hex` sólo garantiza el prefijo 0x, no
-  // la longitud. Un identificador corto se rellenaría por la izquierda al
-  // codificarlo y la firma quedaría atada a un bytes32 que NO es el intent:
-  // exactamente el pie de banco que esta atadura viene a eliminar. Mejor
-  // reventar aquí que producir una firma que no sirve para nada.
-  if (!/^0x[0-9a-fA-F]{64}$/.test(params.intentId)) {
-    throw new TypeError(
-      `intentId must be a 32-byte hex string (0x + 64 hex chars); got ${params.intentId}`,
-    )
-  }
-  const nonce = params.intentId
+  const nonce = intentIdToBytes32(params.intentId)
 
   return {
     domain: {
