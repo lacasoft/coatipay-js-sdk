@@ -88,6 +88,17 @@ export function buildReceiveAuthorizationTypedData(
   const validAfter = params.validAfter ?? 0n
   const validBefore = params.validBefore ?? nowSeconds + BigInt(DEFAULT_VALIDITY_WINDOW_SECONDS)
   // El nonce ES el intent: así la firma solo sirve para pagar ese intent.
+  //
+  // Se valida el formato porque el tipo `Hex` sólo garantiza el prefijo 0x, no
+  // la longitud. Un identificador corto se rellenaría por la izquierda al
+  // codificarlo y la firma quedaría atada a un bytes32 que NO es el intent:
+  // exactamente el pie de banco que esta atadura viene a eliminar. Mejor
+  // reventar aquí que producir una firma que no sirve para nada.
+  if (!/^0x[0-9a-fA-F]{64}$/.test(params.intentId)) {
+    throw new TypeError(
+      `intentId must be a 32-byte hex string (0x + 64 hex chars); got ${params.intentId}`,
+    )
+  }
   const nonce = params.intentId
 
   return {

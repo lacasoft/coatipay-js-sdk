@@ -61,6 +61,18 @@ describe('buildReceiveAuthorizationTypedData', () => {
     expect(typed.domain.verifyingContract).toBe(USDC_ADDRESSES.base)
   })
 
+  it('rechaza un intentId que no sea bytes32, en vez de firmar algo inservible', () => {
+    expect(() =>
+      buildReceiveAuthorizationTypedData({
+        payer: PAYER_ADDR,
+        amount: 5_000_000n,
+        settlementHub: HUB,
+        chain: 'base-sepolia',
+        intentId: '0xbeef' as Hex,
+      }),
+    ).toThrow(/32-byte hex/)
+  })
+
   it('ata el nonce al intent, para que la firma solo sirva para ese pago', () => {
     const intentId = '0xdead000000000000000000000000000000000000000000000000000000000000' as Hex
     const td = buildReceiveAuthorizationTypedData({
