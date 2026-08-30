@@ -62,6 +62,10 @@ describe('buildReceiveAuthorizationTypedData', () => {
     expect(typed.domain.verifyingContract).toBe(USDC_ADDRESSES.base)
   })
 
+  it('rechaza un bytes32 ya derivado, que se hashearía dos veces', () => {
+    expect(() => intentIdToBytes32(intentIdToBytes32('pi_abc123'))).toThrow(/already-derived/)
+  })
+
   it('deriva el nonce del id textual, sin que nadie calcule el hash', () => {
     const td = buildReceiveAuthorizationTypedData({
       payer: PAYER_ADDR,

@@ -40,6 +40,14 @@ const DEFAULT_VALIDITY_WINDOW_SECONDS = 30 * 60
  */
 export function intentIdToBytes32(intentId: string): Hex {
   if (!intentId) throw new TypeError('intentId is required')
+  // Un `0x` + 64 hex ya es un identificador derivado. Hashearlo otra vez daría
+  // un nonce que no corresponde a ningún intent, y el fallo solo aparecería al
+  // liquidar. Los ids de la API son `pi_…`, así que no hay falsos positivos.
+  if (/^0x[0-9a-fA-F]{64}$/.test(intentId)) {
+    throw new TypeError(
+      `intentId must be the textual id the API returned (e.g. "pi_abc123"), not an already-derived bytes32; got ${intentId}`,
+    )
+  }
   return keccak256(toHex(intentId))
 }
 
