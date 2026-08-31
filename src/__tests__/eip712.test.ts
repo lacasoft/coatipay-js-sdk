@@ -3,7 +3,7 @@ import { privateKeyToAccount } from 'viem/accounts'
 import { describe, expect, it } from 'vitest'
 import {
   buildReceiveAuthorizationTypedData,
-  generateNonce,
+  intentIdToBytes32,
   signReceiveAuthorization,
   splitSignature,
   USDC_ADDRESSES,
@@ -20,7 +20,7 @@ describe('buildReceiveAuthorizationTypedData', () => {
       amount: 5_000_000n,
       settlementHub: HUB,
       chain: 'base-sepolia',
-      nonce: '0xabcd000000000000000000000000000000000000000000000000000000000000',
+      intentId: 'pi_test_001',
       validAfter: 0n,
       validBefore: 1_700_001_000n,
     })
@@ -37,7 +37,7 @@ describe('buildReceiveAuthorizationTypedData', () => {
       value: 5_000_000n,
       validAfter: 0n,
       validBefore: 1_700_001_000n,
-      nonce: '0xabcd000000000000000000000000000000000000000000000000000000000000',
+      nonce: intentIdToBytes32('pi_test_001'),
     })
 
     // Field types match the ERC-3009 spec exactly
@@ -55,27 +55,39 @@ describe('buildReceiveAuthorizationTypedData', () => {
       amount: 1n,
       settlementHub: HUB,
       chain: 'base',
+      intentId: 'pi_test_001',
     })
     expect(typed.domain.chainId).toBe(8453)
     expect(typed.domain.name).toBe('USD Coin')
     expect(typed.domain.verifyingContract).toBe(USDC_ADDRESSES.base)
   })
 
-  it('generates a nonce when none provided', () => {
-    const a = buildReceiveAuthorizationTypedData({
+  it('rechaza un bytes32 ya derivado, que se hashearía dos veces', () => {
+    expect(() => intentIdToBytes32(intentIdToBytes32('pi_abc123'))).toThrow(/already-derived/)
+  })
+
+  it('deriva el nonce del id textual, sin que nadie calcule el hash', () => {
+    const td = buildReceiveAuthorizationTypedData({
       payer: PAYER_ADDR,
-      amount: 1n,
+      amount: 5_000_000n,
       settlementHub: HUB,
       chain: 'base-sepolia',
+      intentId: 'pi_abc123',
     })
-    const b = buildReceiveAuthorizationTypedData({
+    expect(td.message.nonce).toBe(intentIdToBytes32('pi_abc123'))
+    expect(td.message.nonce).toMatch(/^0x[0-9a-f]{64}$/)
+  })
+
+  it('ata el nonce al intent, para que la firma solo sirva para ese pago', () => {
+    const intentId = 'pi_dead_beef'
+    const td = buildReceiveAuthorizationTypedData({
       payer: PAYER_ADDR,
-      amount: 1n,
+      amount: 5_000_000n,
       settlementHub: HUB,
       chain: 'base-sepolia',
+      intentId,
     })
-    expect(a.message.nonce).not.toBe(b.message.nonce)
-    expect(a.message.nonce.length).toBe(66) // 0x + 64 hex
+    expect(td.message.nonce).toBe(intentIdToBytes32(intentId))
   })
 
   it('defaults validAfter=0 and validBefore≈now+30min', () => {
@@ -85,6 +97,7 @@ describe('buildReceiveAuthorizationTypedData', () => {
       amount: 1n,
       settlementHub: HUB,
       chain: 'base-sepolia',
+      intentId: 'pi_test_001',
     })
     const after = Math.floor(Date.now() / 1000)
 
@@ -101,7 +114,7 @@ describe('signReceiveAuthorization', () => {
       amount: 5_000_000n,
       settlementHub: HUB,
       chain: 'base-sepolia' as const,
-      nonce: '0xfeed000000000000000000000000000000000000000000000000000000000000' as Hex,
+      intentId: 'pi_test_001',
       validAfter: 0n,
       validBefore: 9_999_999_999n,
     }
@@ -126,6 +139,7 @@ describe('signReceiveAuthorization', () => {
         amount: 1_000n,
         settlementHub: HUB,
         chain: 'base-sepolia',
+        intentId: 'pi_test_001',
       },
       PAYER_KEY,
     )
@@ -166,15 +180,3 @@ describe('splitSignature', () => {
   })
 })
 
-describe('generateNonce', () => {
-  it('returns a 0x-prefixed 32-byte hex string', () => {
-    const n = generateNonce()
-    expect(n.startsWith('0x')).toBe(true)
-    expect(n.length).toBe(66) // 0x + 64 hex chars
-  })
-
-  it('produces distinct values across calls', () => {
-    const set = new Set([generateNonce(), generateNonce(), generateNonce()])
-    expect(set.size).toBe(3)
-  })
-})

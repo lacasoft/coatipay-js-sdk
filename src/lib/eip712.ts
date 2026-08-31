@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto'
 // EIP-712 / ERC-3009 helpers for the CoatiPay SDK.
 //
 // Used to construct the `ReceiveWithAuthorization` typed-data message that
@@ -32,6 +31,26 @@ export { USDC_ADDRESSES }
 /// Default authorization validity window (30 minutes from sign time).
 const DEFAULT_VALIDITY_WINDOW_SECONDS = 30 * 60
 
+/**
+ * Identificador on-chain de un intent, a partir del `pi_…` que devuelve la API.
+ *
+ * Es `keccak256(utf8(id))`, la misma derivación que usan el contrato y el
+ * daemon. Se exporta porque quien construya la autorización a mano necesita el
+ * mismo valor, y calcularlo distinto produce una firma que no sirve.
+ */
+export function intentIdToBytes32(intentId: string): Hex {
+  if (!intentId) throw new TypeError('intentId is required')
+  // Un `0x` + 64 hex ya es un identificador derivado. Hashearlo otra vez daría
+  // un nonce que no corresponde a ningún intent, y el fallo solo aparecería al
+  // liquidar. Los ids de la API son `pi_…`, así que no hay falsos positivos.
+  if (/^0x[0-9a-fA-F]{64}$/.test(intentId)) {
+    throw new TypeError(
+      `intentId must be the textual id the API returned (e.g. "pi_abc123"), not an already-derived bytes32; got ${intentId}`,
+    )
+  }
+  return keccak256(toHex(intentId))
+}
+
 export interface BuildAuthorizationParams {
   /** Payer address — the `from` of the USDC transfer. Must match the signer. */
   payer: Address
@@ -41,8 +60,18 @@ export interface BuildAuthorizationParams {
   settlementHub: Address
   /** Which chain — picks USDC contract address + chainId. */
   chain: SupportedChain
-  /** Optional 32-byte random nonce. SDK generates one if omitted. */
-  nonce?: Hex
+  /**
+   * El intent que se está pagando: el `pi_…` que devolvió la API.
+   *
+   * De él se deriva el nonce de la autorización, y el contrato EXIGE esa
+   * atadura: sin ella, quien envía la transacción —el nodeit, la parte no
+   * confiable— podía aplicar esta firma a otro intent y quedarse el pago.
+   *
+   * Se acepta el identificador textual, no el `bytes32`, para que nadie tenga
+   * que calcular el hash por su cuenta: equivocarse ahí produce una firma
+   * atada a un intent inexistente, y el error solo aparece al liquidar.
+   */
+  intentId: string
   /** Unix seconds; signature invalid before this. Default: 0 (always valid from start). */
   validAfter?: bigint
   /** Unix seconds; signature invalid after this. Default: now + 30 minutes. */
@@ -82,7 +111,8 @@ export function buildReceiveAuthorizationTypedData(
   const nowSeconds = BigInt(Math.floor(Date.now() / 1000))
   const validAfter = params.validAfter ?? 0n
   const validBefore = params.validBefore ?? nowSeconds + BigInt(DEFAULT_VALIDITY_WINDOW_SECONDS)
-  const nonce = params.nonce ?? generateNonce()
+  // El nonce ES el intent: así la firma solo sirve para pagar ese intent.
+  const nonce = intentIdToBytes32(params.intentId)
 
   return {
     domain: {
@@ -118,7 +148,11 @@ export interface SignedAuthorization {
   /** Authorization validity window. */
   validAfter: bigint
   validBefore: bigint
-  /** 32-byte random nonce, hex-encoded. */
+  /**
+   * Nonce de la autorización, hex de 32 bytes. **Es el `intentId`**: el
+   * contrato exige `nonce == intentId` para que una firma no pueda aplicarse
+   * a otro intent. Ya no es un valor aleatorio.
+   */
   nonce: Hex
   /**
    * Raw signature, hex-encoded. For an EOA this is the 65-byte ECDSA blob; for
@@ -163,10 +197,6 @@ export function splitSignature(signature: Hex): { v: number; r: Hex; s: Hex } {
   return { v, r, s }
 }
 
-/// Generate a cryptographically random 32-byte nonce as 0x-prefixed hex.
-export function generateNonce(): Hex {
-  return toHex(randomBytes(32))
-}
 
 // ── Internal: EIP-712 hashing + signing ───────────────────────
 
