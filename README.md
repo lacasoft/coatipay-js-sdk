@@ -2,7 +2,7 @@
 
 The CoatiPay JavaScript/TypeScript SDK — **Stripe-compatible payments for the open web**.
 Accept **USDC on Base** with no gatekeepers: gasless settlement (ERC-3009), webhooks, and
-**x402** micropayments for AI agents. ~1% protocol fee (0.7% nodeit / 0.3% treasury), settled
+**x402** micropayments for AI agents. 1.5% protocol fee (1.05% nodeit / 0.45% treasury), settled
 trustlessly on-chain.
 
 - ⛽ **Gasless for payers** — they sign an ERC-3009 authorization; the nodeit pays the gas.
@@ -72,10 +72,9 @@ Any HTTP client that speaks x402 — including AI agents over MCP — can pay an
 endpoint autonomously.
 
 > **Economics:** on-chain settlement costs gas, so each call must clear a floor
-> (the node keeps 0.7% of the fee and pays the gas; break-even is roughly
-> **~$0.30/call** on Base). The API rejects amounts below the configured
-> `MIN_PAYMENT_AMOUNT`. True sub-cent micropayments need off-chain netting —
-> on the roadmap.
+> (the node keeps 1.05% of the payment and pays the gas). The API rejects
+> amounts below the configured `MIN_PAYMENT_AMOUNT` — **~$0.30/call** on Base
+> today. True sub-cent micropayments need off-chain netting — on the roadmap.
 
 ### The HTTP flow (x402 spec)
 
