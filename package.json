@@ -1,6 +1,6 @@
 {
   "name": "@lacasoft/coatipay-sdk",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "CoatiPay JavaScript/TypeScript SDK — the Stripe-compatible payment SDK for the open web",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
