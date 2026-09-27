@@ -31,6 +31,8 @@ export type {
   CreatePaymentIntentParams,
   CoatiPayError,
   CoatiPayErrorCode,
+  ErrorCategory,
+  ErrorDefinition,
   PaymentIntent,
   WebhookEvent,
   X402MiddlewareOptions,
@@ -38,8 +40,10 @@ export type {
 export {
   AuthError,
   classifyError,
-  NetworkError,
   CoatiPaySDKError,
+  ERROR_CATALOG,
+  NetworkError,
+  RateLimitError,
   RoutingError,
   ValidationError,
 } from '@lacasoft/coatipay-protocol'

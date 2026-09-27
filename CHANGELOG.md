@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **`@lacasoft/coatipay-protocol` 0.1.2: the error codes match what the API
+  returns.** `CoatiPayErrorCode` is derived from the new `ERROR_CATALOG` (every
+  code with the HTTP status it always comes with). It no longer lists
+  `amount_too_small`, `amount_too_large`, `chain_not_supported`,
+  `intent_expired` or `no_nodes_available` — the API never returned them — and
+  now includes every code it does. `classifyError` maps more codes to their
+  class: every validation reason to `ValidationError`, `invalid_session` and
+  `invalid_token` to `AuthError`.
+
+  Published `0.1.2` of this SDK already resolves protocol `0.1.2` on a fresh
+  install (`^0.1.0`); this bumps the floor and the lockfile.
+
+### Added
+
+- `RateLimitError` (for `rate_limited`, HTTP 429) and `ERROR_CATALOG`,
+  re-exported from the protocol package.
+
 ## Withdrawn versions — 2026-09-27
 
 **0.1.0 and 0.1.1 cannot complete a payment**: they sign with a random nonce, and the API
