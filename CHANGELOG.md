@@ -1,5 +1,14 @@
 # Changelog
 
+## Withdrawn versions — 2026-09-27
+
+**0.1.0 and 0.1.1 cannot complete a payment**: they sign with a random nonce, and the API
+and the SettlementHub reject any authorization whose nonce is not the intent id (see 0.1.2
+below). Both are **deprecated on npm** with a message pointing here. Use **0.1.2 or later**.
+
+The old `@lacasoft/openrelay-sdk` package (the name before the rebrand) has the same problem
+and is deprecated too.
+
 ## 0.1.2 — 2026-09-01
 
 ### ⚠️ Breaking: `intentId` is now required when signing
