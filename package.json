@@ -42,7 +42,7 @@
   },
   "dependencies": {
     "viem": "^2.55.5",
-    "@lacasoft/coatipay-protocol": "^0.1.0"
+    "@lacasoft/coatipay-protocol": "^0.1.1"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",
