@@ -1,6 +1,11 @@
 /**
  * Criterio 5: Manejo de errores tipados — NetworkError, AuthError,
- * ValidationError, RoutingError distinguibles en runtime.
+ * ValidationError, RoutingError y RateLimitError distinguibles en runtime.
+ *
+ * Con códigos que la API devuelve de verdad (ERROR_CATALOG de
+ * @lacasoft/coatipay-protocol). Antes usaba amount_too_small,
+ * amount_too_large, chain_not_supported y no_nodes_available: la API nunca los
+ * devolvió, así que los tests validaban un caso que no existe.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -9,9 +14,11 @@ vi.stubGlobal('fetch', mockFetch)
 
 import {
   AuthError,
-  NetworkError,
   CoatiPay,
   CoatiPaySDKError,
+  ERROR_CATALOG,
+  NetworkError,
+  RateLimitError,
   RoutingError,
   ValidationError,
 } from '../../index.js'
@@ -26,7 +33,7 @@ function apiErrorResponse(code: string, message: string, status = 400) {
           code,
           message,
           param: null,
-          doc_url: `https://docs.coatipay.com/errors/${code}`,
+          doc_url: `https://coatipay.com/docs/errors/${code}`,
         },
       }),
   }
@@ -74,9 +81,9 @@ describe('Criterio 5 — Errores tipados', () => {
   })
 
   describe('ValidationError', () => {
-    it('lanza ValidationError en código amount_too_small', async () => {
+    it('lanza ValidationError en código amount_below_minimum', async () => {
       mockFetch.mockResolvedValueOnce(
-        apiErrorResponse('amount_too_small', 'Amount is below minimum.', 400),
+        apiErrorResponse('amount_below_minimum', 'Amount is below the minimum payable amount.', 400),
       )
 
       await expect(
@@ -84,9 +91,9 @@ describe('Criterio 5 — Errores tipados', () => {
       ).rejects.toBeInstanceOf(ValidationError)
     })
 
-    it('lanza ValidationError en código amount_too_large', async () => {
+    it('lanza ValidationError en código invalid_request', async () => {
       mockFetch.mockResolvedValueOnce(
-        apiErrorResponse('amount_too_large', 'Amount exceeds maximum.', 400),
+        apiErrorResponse('invalid_request', 'Number must be less than or equal to…', 400),
       )
 
       await expect(
@@ -94,9 +101,9 @@ describe('Criterio 5 — Errores tipados', () => {
       ).rejects.toBeInstanceOf(ValidationError)
     })
 
-    it('lanza ValidationError en código chain_not_supported', async () => {
+    it('lanza ValidationError en código invalid_signer', async () => {
       mockFetch.mockResolvedValueOnce(
-        apiErrorResponse('chain_not_supported', 'Chain not supported.', 400),
+        apiErrorResponse('invalid_signer', 'The signature is not valid for the claimed payer address.', 400),
       )
 
       await expect(
@@ -111,7 +118,7 @@ describe('Criterio 5 — Errores tipados', () => {
         json: () =>
           Promise.resolve({
             error: {
-              code: 'amount_too_small',
+              code: 'amount_below_minimum',
               message: 'Too small.',
               param: 'amount',
               doc_url: '',
@@ -123,7 +130,7 @@ describe('Criterio 5 — Errores tipados', () => {
         await relay.paymentIntents.create({ amount: 1, currency: 'usdc', chain: 'base' })
         expect.fail('Should throw')
       } catch (err) {
-        expect((err as ValidationError).code).toBe('amount_too_small')
+        expect((err as ValidationError).code).toBe('amount_below_minimum')
         expect((err as ValidationError).param).toBe('amount')
         expect((err as ValidationError).name).toBe('ValidationError')
       }
@@ -131,9 +138,9 @@ describe('Criterio 5 — Errores tipados', () => {
   })
 
   describe('RoutingError', () => {
-    it('lanza RoutingError en código no_nodes_available', async () => {
+    it('lanza RoutingError en código node_unavailable', async () => {
       mockFetch.mockResolvedValueOnce(
-        apiErrorResponse('no_nodes_available', 'No nodeits available.', 503),
+        apiErrorResponse('node_unavailable', 'Bootstrap nodeit unreachable.', 502),
       )
 
       await expect(
@@ -142,7 +149,7 @@ describe('Criterio 5 — Errores tipados', () => {
     })
 
     it('RoutingError es instancia de CoatiPaySDKError', async () => {
-      mockFetch.mockResolvedValueOnce(apiErrorResponse('no_nodes_available', 'No route.', 503))
+      mockFetch.mockResolvedValueOnce(apiErrorResponse('node_unavailable', 'No route.', 502))
 
       try {
         await relay.paymentIntents.create({ amount: 10000, currency: 'usdc', chain: 'base' })
@@ -152,6 +159,29 @@ describe('Criterio 5 — Errores tipados', () => {
         expect(err).toBeInstanceOf(CoatiPaySDKError)
         expect((err as RoutingError).name).toBe('RoutingError')
       }
+    })
+  })
+
+  describe('RateLimitError', () => {
+    it('lanza RateLimitError en código rate_limited (429)', async () => {
+      mockFetch.mockResolvedValueOnce(apiErrorResponse('rate_limited', 'Rate limit exceeded.', 429))
+
+      try {
+        await relay.paymentIntents.retrieve('pi_rl')
+        expect.fail('Should throw')
+      } catch (err) {
+        expect(err).toBeInstanceOf(RateLimitError)
+        expect(err).toBeInstanceOf(CoatiPaySDKError)
+        expect((err as RateLimitError).code).toBe('rate_limited')
+      }
+    })
+  })
+
+  describe('ERROR_CATALOG', () => {
+    it('el SDK expone el catálogo: cada código con su HTTP', () => {
+      expect(ERROR_CATALOG.rate_limited.http).toBe(429)
+      expect(ERROR_CATALOG.intent_not_found.http).toBe(404)
+      expect(ERROR_CATALOG).not.toHaveProperty('amount_too_small')
     })
   })
 
@@ -194,8 +224,9 @@ describe('Criterio 5 — Errores tipados', () => {
     it('switch por instanceof distingue todos los tipos', async () => {
       const cases: Array<[string, string, number, string]> = [
         ['invalid_api_key', 'Bad key', 401, 'auth'],
-        ['amount_too_small', 'Too small', 400, 'validation'],
-        ['no_nodes_available', 'No route', 503, 'routing'],
+        ['amount_below_minimum', 'Too small', 400, 'validation'],
+        ['node_unavailable', 'No route', 502, 'routing'],
+        ['rate_limited', 'Slow down', 429, 'rate_limit'],
       ]
 
       for (const [code, msg, status, expected] of cases) {
@@ -210,6 +241,7 @@ describe('Criterio 5 — Errores tipados', () => {
           else if (err instanceof AuthError) classified = 'auth'
           else if (err instanceof ValidationError) classified = 'validation'
           else if (err instanceof RoutingError) classified = 'routing'
+          else if (err instanceof RateLimitError) classified = 'rate_limit'
           else classified = 'unknown'
 
           expect(classified).toBe(expected)

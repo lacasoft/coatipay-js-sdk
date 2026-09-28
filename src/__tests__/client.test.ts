@@ -254,7 +254,7 @@ describe('error handling', () => {
         code: 'invalid_api_key',
         message: 'Invalid or revoked API key.',
         param: null,
-        doc_url: 'https://docs.coatipay.com/errors/invalid_api_key',
+        doc_url: 'https://coatipay.com/docs/errors/invalid_api_key',
       },
     }
 
@@ -273,7 +273,7 @@ describe('error handling', () => {
         code: 'intent_not_found',
         message: 'No payment intent found.',
         param: 'id',
-        doc_url: 'https://docs.coatipay.com/errors/intent_not_found',
+        doc_url: 'https://coatipay.com/docs/errors/intent_not_found',
       },
     }
 
