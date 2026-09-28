@@ -34,3 +34,12 @@ jobs:
 
       - name: Test
         run: npm test
+
+      # Los vectores compartidos entre los SDK, de la ÚLTIMA versión publicada
+      # del protocolo (no solo la del lockfile): un vector nuevo que este SDK
+      # no cumpla hace fallar el CI aunque nadie haya subido la dependencia.
+      - name: Shared vectors (latest published protocol)
+        run: |
+          npm pack @lacasoft/coatipay-protocol@latest --pack-destination "$RUNNER_TEMP" --silent > /dev/null
+          tar -xzf "$RUNNER_TEMP"/lacasoft-coatipay-protocol-*.tgz -C "$RUNNER_TEMP"
+          COATIPAY_VECTORES="$RUNNER_TEMP/package/vectors" npx vitest run src/__tests__/vectores.test.ts

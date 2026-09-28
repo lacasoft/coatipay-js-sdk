@@ -39,7 +39,9 @@ const DEFAULT_VALIDITY_WINDOW_SECONDS = 30 * 60
  * mismo valor, y calcularlo distinto produce una firma que no sirve.
  */
 export function intentIdToBytes32(intentId: string): Hex {
-  if (!intentId) throw new TypeError('intentId is required')
+  // Vacío o solo espacios: su hash sería un nonce que parece válido y no es el
+  // de ningún intent (vectores compartidos, `nonce.json` → `rechazados`).
+  if (!intentId?.trim()) throw new TypeError('intentId is required')
   // Un `0x` + 64 hex ya es un identificador derivado. Hashearlo otra vez daría
   // un nonce que no corresponde a ningún intent, y el fallo solo aparecería al
   // liquidar. Los ids de la API son `pi_…`, así que no hay falsos positivos.

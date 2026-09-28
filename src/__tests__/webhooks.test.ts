@@ -1,3 +1,4 @@
+import type { WebhookEventType } from '@lacasoft/coatipay-protocol'
 import { createHmac } from 'node:crypto'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -126,10 +127,9 @@ describe('Webhooks.verify', () => {
     const eventTypes = [
       'payment_intent.created',
       'payment_intent.settled',
-      'payment_intent.failed',
+      'payment_intent.expired',
       'payment_intent.cancelled',
-      'dispute.opened',
-    ] as const
+    ] as const satisfies readonly WebhookEventType[]
 
     for (const type of eventTypes) {
       const payload = JSON.stringify({
@@ -197,7 +197,7 @@ describe('Webhooks.register', () => {
 
     const result = await client.webhooks.register('https://example.com/hook', [
       'payment_intent.settled',
-      'payment_intent.failed',
+      'payment_intent.cancelled',
     ])
 
     const [url, opts] = mockFetch.mock.calls[0]!
@@ -205,8 +205,51 @@ describe('Webhooks.register', () => {
     expect(opts.method).toBe('POST')
     const body = JSON.parse(opts.body)
     expect(body.url).toBe('https://example.com/hook')
-    expect(body.events).toEqual(['payment_intent.settled', 'payment_intent.failed'])
+    expect(body.events).toEqual(['payment_intent.settled', 'payment_intent.cancelled'])
     expect(result.id).toBe('we_new1')
     expect(result.secret).toBe('whsec_newsecret123')
+  })
+})
+
+describe('Webhooks — DLQ', () => {
+  const entrega = {
+    id: 'dlq_1',
+    endpoint_id: 'we_1',
+    endpoint_url: 'https://example.com/hook',
+    event_id: 'evt_1',
+    event_type: 'payment_intent.settled',
+    delivery_id: 'whd_1',
+    attempts: 6,
+    last_error: 'HTTP 500',
+    last_attempted_at: 1_790_000_000,
+    created_at: 1_790_000_000,
+    replayed_at: null,
+    payload: { id: 'evt_1' },
+  }
+
+  it('listDeadLetters pide GET /webhooks/dead_letters, con el límite si se da', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ data: [entrega], has_more: false }),
+    })
+    const r = await client.webhooks.listDeadLetters({ limit: 5 })
+    const [url, opts] = mockFetch.mock.calls[0]!
+    expect(url).toBe('https://api.test.coatipay.com/v1/webhooks/dead_letters?limit=5')
+    expect(opts.method).toBe('GET')
+    expect(r.data[0]?.delivery_id).toBe('whd_1')
+  })
+
+  it('replayDeadLetter pide POST /webhooks/dead_letters/:id/replay', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 202,
+      json: () => Promise.resolve({ ...entrega, replayed_at: 1_790_000_100 }),
+    })
+    const r = await client.webhooks.replayDeadLetter('dlq_1')
+    const [url, opts] = mockFetch.mock.calls[0]!
+    expect(url).toBe('https://api.test.coatipay.com/v1/webhooks/dead_letters/dlq_1/replay')
+    expect(opts.method).toBe('POST')
+    expect(r.replayed_at).toBe(1_790_000_100)
   })
 })

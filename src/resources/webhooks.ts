@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
-import type { WebhookEvent } from '@lacasoft/coatipay-protocol'
+import type { WebhookEvent, WebhookEventType } from '@lacasoft/coatipay-protocol'
 import type { CoatiPayConfig } from '../lib/types'
 import { request } from '../lib/types'
 
@@ -10,13 +10,58 @@ import { request } from '../lib/types'
  */
 const DEFAULT_TOLERANCE_SECONDS = 300
 
+/** Why a webhook signature was rejected. The same reasons in every CoatiPay SDK. */
+export type WebhookSignatureReason =
+  | 'malformed_header'
+  | 'timestamp_out_of_tolerance'
+  | 'no_matching_signature'
+
+/** Thrown by `webhooks.verify` when the request cannot be trusted. */
+export class WebhookSignatureError extends Error {
+  readonly reason: WebhookSignatureReason
+  constructor(reason: WebhookSignatureReason, message: string) {
+    super(message)
+    this.name = 'WebhookSignatureError'
+    this.reason = reason
+  }
+}
+
+export interface VerifyOptions {
+  /** Seconds the `t=` timestamp may differ from now. Default 300. */
+  tolerance?: number
+  /** Current time in seconds. Default: the system clock. For tests. */
+  now?: number
+}
+
+/** A webhook delivery that exhausted its retries (dead-letter queue). */
+export interface DeadLetter {
+  id: string
+  endpoint_id: string
+  endpoint_url: string
+  event_id: string
+  event_type: string
+  /** The `X-Delivery-Id` of that delivery. */
+  delivery_id: string
+  attempts: number
+  last_error: string | null
+  last_attempted_at: number
+  created_at: number
+  replayed_at: number | null
+  /** The signed event body, as it was sent. */
+  payload: Record<string, unknown>
+}
+
 export class Webhooks {
   constructor(private config: CoatiPayConfig) {}
 
+  /**
+   * Register an endpoint. The returned `secret` signs its deliveries and is
+   * only returned here: store it.
+   */
   async register(
     url: string,
-    events: string[],
-  ): Promise<{ id: string; url: string; secret: string }> {
+    events: WebhookEventType[],
+  ): Promise<{ id: string; url: string; events: WebhookEventType[]; secret: string; created_at: number }> {
     return request(this.config, {
       method: 'POST',
       path: '/webhooks',
@@ -24,13 +69,43 @@ export class Webhooks {
     })
   }
 
+  /** Deliveries that exhausted their retries, newest first. Secret key. */
+  async listDeadLetters(params: { limit?: number } = {}): Promise<{
+    data: DeadLetter[]
+    has_more: boolean
+  }> {
+    const query = params.limit !== undefined ? `?limit=${encodeURIComponent(params.limit)}` : ''
+    return request(this.config, { method: 'GET', path: `/webhooks/dead_letters${query}` })
+  }
+
   /**
-   * Verify a webhook payload signature.
-   * Call this in your webhook handler to ensure the request is from CoatiPay.
+   * Send a dead letter again: the same event, with the same id, to the same
+   * endpoint, retries reset. Secret key.
+   */
+  async replayDeadLetter(id: string): Promise<DeadLetter> {
+    return request(this.config, {
+      method: 'POST',
+      path: `/webhooks/dead_letters/${encodeURIComponent(id)}/replay`,
+    })
+  }
+
+  /**
+   * Verify a webhook's `X-Signature` header and return the parsed event.
+   * Call it in your webhook handler with the RAW request body.
    *
-   * Validates: (1) signature format, (2) timestamp freshness against
-   * `toleranceSeconds` to mitigate replay, (3) HMAC equality with
-   * timing-safe compare.
+   * The same rules in every CoatiPay SDK (shared test vectors in
+   * `@lacasoft/coatipay-protocol/vectors/webhooks.json`):
+   *   - `t=<seconds>,v1=<hex>` parts, comma-separated; a part without `=` or
+   *     without a key, a missing or repeated `t`, a `t` that is not all
+   *     digits, or no `v1` → `malformed_header`.
+   *   - `|now − t|` above the tolerance → `timestamp_out_of_tolerance`.
+   *   - Valid if ANY `v1` is the HMAC-SHA256 of `<t>.<body>` with your secret,
+   *     so a secret can be rotated without dropping deliveries; otherwise
+   *     `no_matching_signature`.
+   *
+   * @param options Tolerance in seconds (a number, as before), or
+   *   `{ tolerance, now }`.
+   * @throws {WebhookSignatureError} with the `reason`.
    *
    * @example
    * const event = relay.webhooks.verify(rawBody, req.headers['x-signature'], secret)
@@ -39,35 +114,40 @@ export class Webhooks {
     payload: string,
     signature: string,
     secret: string,
-    toleranceSeconds = DEFAULT_TOLERANCE_SECONDS,
+    options: number | VerifyOptions = {},
   ): WebhookEvent {
-    const parts = signature.split(',')
-    const ts = parts.find((p) => p.startsWith('t='))?.slice(2)
-    const sig = parts.find((p) => p.startsWith('v1='))?.slice(3)
+    const { tolerance = DEFAULT_TOLERANCE_SECONDS, now = Math.floor(Date.now() / 1000) } =
+      typeof options === 'number' ? { tolerance: options } : options
 
-    if (!ts || !sig) throw new Error('Invalid signature format')
-
-    // Anti-replay: reject signatures whose `t=` is outside the tolerance
-    // window. Mirrors what packages/sdk-python and packages/sdk-php do.
-    const timestamp = Number(ts)
-    if (!Number.isFinite(timestamp) || timestamp <= 0) {
-      throw new Error('Invalid signature format')
+    const ts: string[] = []
+    const firmas: string[] = []
+    for (const bruta of signature.split(',')) {
+      const parte = bruta.trim()
+      const igual = parte.indexOf('=')
+      if (igual <= 0) throw new WebhookSignatureError('malformed_header', 'Invalid signature format')
+      const clave = parte.slice(0, igual)
+      if (clave === 't') ts.push(parte.slice(igual + 1))
+      if (clave === 'v1') firmas.push(parte.slice(igual + 1))
     }
-    const nowSeconds = Math.floor(Date.now() / 1000)
-    if (Math.abs(nowSeconds - timestamp) > toleranceSeconds) {
-      throw new Error('Signature timestamp outside tolerance window')
+    const t = ts[0]
+    if (ts.length !== 1 || t === undefined || !/^\d+$/.test(t) || firmas.length === 0) {
+      throw new WebhookSignatureError('malformed_header', 'Invalid signature format')
     }
 
-    const expected = createHmac('sha256', secret).update(`${ts}.${payload}`).digest('hex')
-
-    // Timing-safe equality: prevents byte-by-byte timing attacks against the
-    // HMAC comparison. timingSafeEqual requires equal-length buffers, which
-    // for hex-encoded sha256 is guaranteed (64 chars) — but we still guard.
-    if (sig.length !== expected.length) {
-      throw new Error('Signature verification failed')
+    if (Math.abs(now - Number(t)) > tolerance) {
+      throw new WebhookSignatureError(
+        'timestamp_out_of_tolerance',
+        'Signature timestamp outside tolerance window',
+      )
     }
-    if (!timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) {
-      throw new Error('Signature verification failed')
+
+    const expected = Buffer.from(createHmac('sha256', secret).update(`${t}.${payload}`).digest('hex'))
+    const coincide = firmas.some((f) => {
+      const recibida = Buffer.from(f)
+      return recibida.length === expected.length && timingSafeEqual(recibida, expected)
+    })
+    if (!coincide) {
+      throw new WebhookSignatureError('no_matching_signature', 'Signature verification failed')
     }
 
     return JSON.parse(payload) as WebhookEvent
