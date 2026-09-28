@@ -1,3 +1,4 @@
+import type { WebhookEventType } from '@lacasoft/coatipay-protocol'
 /**
  * Criterio 3: Verificación de firma de webhook con la utilidad oficial del SDK.
  * No se permite implementación propia de HMAC.
@@ -115,10 +116,9 @@ describe('Criterio 3 — Verificación de firma (utilidad SDK oficial)', () => {
     const types = [
       'payment_intent.created',
       'payment_intent.settled',
-      'payment_intent.failed',
+      'payment_intent.expired',
       'payment_intent.cancelled',
-      'dispute.opened',
-    ] as const
+    ] as const satisfies readonly WebhookEventType[]
 
     for (const type of types) {
       const payload = JSON.stringify({ id: `evt_${type}`, type, created: 1, data: {} })

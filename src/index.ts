@@ -34,7 +34,9 @@ export type {
   ErrorCategory,
   ErrorDefinition,
   PaymentIntent,
+  PaymentIntentStatus,
   WebhookEvent,
+  WebhookEventType,
   X402MiddlewareOptions,
 } from '@lacasoft/coatipay-protocol'
 export {
@@ -43,6 +45,7 @@ export {
   CoatiPaySDKError,
   ERROR_CATALOG,
   NetworkError,
+  PaymentError,
   RateLimitError,
   RoutingError,
   ValidationError,
@@ -64,6 +67,8 @@ export {
   USDC_ADDRESSES,
 } from './lib/eip712'
 export type { LogEntry, CoatiPayConfig } from './lib/types'
+export type { DeadLetter, VerifyOptions, WebhookSignatureReason } from './resources/webhooks'
+export { WebhookSignatureError } from './resources/webhooks'
 export type {
   SubmitAuthorizationBatchResponse,
   SubmitAuthorizationResponse,

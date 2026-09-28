@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.1.4 — 2026-09-28
+
+### Changed
+
+- **`webhooks.verify` follows the rules shared by every CoatiPay SDK**
+  (vectors in `@lacasoft/coatipay-protocol/vectors/webhooks.json`):
+  - valid if **any** `v1` matches, so a signing secret can be rotated without
+    dropping deliveries (it used to check only the first one);
+  - `t` must be all digits and appear once; spaces around parts are ignored;
+  - the fourth argument also takes `{ tolerance, now }` — a number still sets
+    the tolerance;
+  - it throws `WebhookSignatureError` with a `reason`: `malformed_header`,
+    `timestamp_out_of_tolerance` or `no_matching_signature`. It is still an
+    `Error`, with the same messages.
+- **`intentIdToBytes32` rejects a whitespace-only id**, as it already did an
+  empty one: its hash is a nonce that looks valid and belongs to no intent.
+- **`webhooks.register` takes `WebhookEventType[]`.** Passing an event that
+  does not exist (such as `payment_intent.failed`) no longer type-checks.
+
+### Added
+
+- `webhooks.listDeadLetters({ limit })` and `webhooks.replayDeadLetter(id)`:
+  deliveries that exhausted their retries, and sending one again.
+- Exports `PaymentError` (x402 payment errors were already classified as such,
+  but the class was not exported), `WebhookSignatureError`, and the
+  `PaymentIntentStatus` and `WebhookEventType` types.
+- Tests against the shared vectors: the authorization nonce, the full
+  ERC-3009 authorization per network (domain, message, digest, signature and
+  API body), the 21 webhook cases and every error class.
+
 ## 0.1.3 — 2026-09-28
 
 ### Changed
