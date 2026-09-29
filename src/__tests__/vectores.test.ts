@@ -9,6 +9,7 @@ import {
   CoatiPay,
   CoatiPaySDKError,
   intentIdToBytes32,
+  NetworkError,
   signReceiveAuthorization,
   WebhookSignatureError,
 } from '../index'
@@ -130,4 +131,38 @@ describe('vectores: errores', () => {
   it('un código desconocido es CoatiPaySDKError, nunca un fallo', () => {
     expect(clase(v.desconocido.code).name).toBe(v.desconocido.clase)
   })
+})
+
+describe('vectores: respuestas de la API', () => {
+  const relay = new CoatiPay({ apiKey: 'sk_test_vectores', baseUrl: 'https://api.test' })
+
+  for (const c of vector('errores.json').respuestas.casos) {
+    it(c.nombre, async () => {
+      if (c.respuesta === null) mockFetch.mockRejectedValueOnce(new TypeError('fetch failed'))
+      else mockFetch.mockResolvedValueOnce(new Response(c.respuesta.cuerpo, { status: c.respuesta.status }))
+
+      const llamada = relay.paymentIntents.retrieve('pi_vector')
+      const e = c.esperado
+      if (e.ok) {
+        await expect(llamada).resolves.toEqual(JSON.parse(c.respuesta.cuerpo))
+        return
+      }
+      const error = await llamada.then(
+        () => expect.fail('debía lanzar'),
+        (err: unknown) => err,
+      )
+      expect(error).toBeInstanceOf(CoatiPaySDKError)
+      const sdk = error as CoatiPaySDKError
+      expect(sdk.name).toBe(e.clase)
+      expect({ code: sdk.code, param: sdk.param, doc_url: sdk.doc_url }).toEqual({
+        code: e.code,
+        param: e.param,
+        doc_url: e.doc_url,
+      })
+      if (e.clase === 'NetworkError') {
+        expect(error).toBeInstanceOf(NetworkError)
+        expect((error as NetworkError).status).toBe(e.status)
+      }
+    })
+  }
 })

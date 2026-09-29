@@ -34,6 +34,8 @@ const intent = await relay.paymentIntents.create({
   currency: 'usdc',
   chain: 'base',
   metadata: { orderId: 'order_123' },
+  // Safe to retry: the same key with the same parameters returns the same intent.
+  idempotency_key: 'order_123',
 })
 
 console.log(intent.id, intent.status) // "pi_…"  "created"
@@ -42,17 +44,68 @@ console.log(intent.id, intent.status) // "pi_…"  "created"
 ## Webhooks
 
 ```typescript
-app.post('/webhooks', (req) => {
-  const event = relay.webhooks.verify(
-    req.body, // raw body
-    req.headers['x-signature'],
-    process.env.COATIPAY_WEBHOOK_SECRET!,
-  )
+import { WebhookSignatureError } from '@lacasoft/coatipay-sdk'
+
+app.post('/webhooks', express.raw({ type: 'application/json' }), (req, res) => {
+  let event
+  try {
+    event = relay.webhooks.verify(
+      req.body.toString(), // the RAW body, before any JSON parsing
+      req.headers['x-signature'],
+      process.env.COATIPAY_WEBHOOK_SECRET!,
+    )
+  } catch (e) {
+    if (e instanceof WebhookSignatureError) return res.status(400).send(e.reason)
+    throw e
+  }
+  // At least once and in no particular order: deduplicate by event.id.
   if (event.type === 'payment_intent.settled') {
     fulfillOrder(event.data.metadata.orderId)
   }
+  res.sendStatus(200)
 })
 ```
+
+- `verify` checks the HMAC-SHA256 signature in constant time and rejects a timestamp more
+  than 5 minutes away from now (replay protection): `{ tolerance }` changes it, in seconds.
+- On failure it throws `WebhookSignatureError` with a `reason`: `malformed_header`,
+  `timestamp_out_of_tolerance` or `no_matching_signature`.
+- Events: `payment_intent.created`, `payment_intent.settled`, `payment_intent.expired`,
+  `payment_intent.cancelled`.
+- **Changing the secret.** The API does not rotate secrets yet. Register a second endpoint
+  with the same URL, verify with either secret while both exist (the same event arrives
+  through each, with the same `event.id`), then delete the old one. `verify` already
+  accepts a header with several `v1` signatures, for when the API signs with two.
+- **Deliveries that exhausted their retries** stay in a dead-letter queue:
+
+  ```typescript
+  const { data } = await relay.webhooks.listDeadLetters({ limit: 20 })
+  await relay.webhooks.replayDeadLetter(data[0].id) // same event, same id, retries reset
+  ```
+
+## Errors
+
+```typescript
+import { CoatiPaySDKError, NetworkError } from '@lacasoft/coatipay-sdk'
+
+try {
+  await relay.paymentIntents.create({ amount, currency: 'usdc', chain: 'base', idempotency_key: orderId })
+} catch (e) {
+  if (e instanceof NetworkError) {
+    // No CoatiPay answer (e.status: the HTTP status, or null). Whether it took effect is
+    // unknown: retrying with the same idempotency_key returns the same intent.
+  } else if (e instanceof CoatiPaySDKError) {
+    console.log(e.code, e.message, e.param, e.doc_url)
+  }
+}
+```
+
+Everything a call throws is a `CoatiPaySDKError`, with `code`, `message`, `param` and
+`doc_url` (the code's page at [coatipay.com/docs/errors](https://coatipay.com/docs/errors/)).
+The class tells the kind: `AuthError`, `ValidationError`, `RoutingError`, `PaymentError`,
+`RateLimitError`, or the base class for the rest and for a code this version does not know.
+`NetworkError` is one too, so check it first. The same classes and rules in the Python
+and PHP SDKs.
 
 ## x402 — micropayments for AI agents
 
