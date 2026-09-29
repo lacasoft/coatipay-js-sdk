@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.1.5 — 2026-09-29
+
+### Changed
+
+- **One rule for the API's response, shared by every CoatiPay SDK** (vectors in
+  `@lacasoft/coatipay-protocol/vectors/errores.json`, `respuestas`):
+  - A body that is not JSON — a proxy's HTML 502, an empty 503, even a 2xx —
+    throws `NetworkError` with its `status`. It used to throw a `SyntaxError`.
+  - An error response that is not a CoatiPay error (no `error.code`, such as
+    Fastify's default error) throws `NetworkError` too. It used to throw a
+    `TypeError` from reading `code` of `undefined`.
+  - A CoatiPay error without `doc_url` gets the code's page; without `param`,
+    `null`.
+- **`NetworkError` is now a `CoatiPaySDKError`** (code `network_error`, from
+  `@lacasoft/coatipay-protocol` 0.1.6), with `status`: the HTTP status, or
+  `null` when there was no response. One `catch` covers every call. **If you
+  check `instanceof CoatiPaySDKError` before `instanceof NetworkError`, network
+  failures now take the first branch: check `NetworkError` first.**
+
+### Docs
+
+- README: error handling, `idempotency_key`, webhook failure reasons, the dead-
+  letter queue, and how to change a webhook secret today (the API does not
+  rotate secrets yet).
+
 ## 0.1.4 — 2026-09-28
 
 ### Changed

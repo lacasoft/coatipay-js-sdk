@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto'
-import { classifyError, NetworkError } from '@lacasoft/coatipay-protocol'
+import {
+  type CoatiPayErrorCode,
+  classifyError,
+  docUrl,
+  NetworkError,
+} from '@lacasoft/coatipay-protocol'
 
 export interface LogEntry {
   request_id: string
@@ -62,10 +67,20 @@ export async function request<T>(config: CoatiPayConfig, opts: RequestOptions): 
     clearTimeout(timer)
   }
 
-  const data = (await res.json()) as { error?: unknown; node_operator?: string } & Record<
-    string,
-    unknown
-  >
+  // The same rule in every CoatiPay SDK (shared vectors:
+  // `@lacasoft/coatipay-protocol/vectors/errores.json`, `respuestas`). A body
+  // that is not JSON is not a CoatiPay answer, even with a 2xx: a proxy's 502
+  // is HTML.
+  let data: unknown
+  let esJson = true
+  let causa: unknown
+  try {
+    data = await res.json()
+  } catch (err) {
+    esJson = false
+    causa = err
+  }
+  const cuerpo = esObjeto(data) ? data : null
 
   config.logger?.({
     request_id: requestId,
@@ -73,14 +88,30 @@ export async function request<T>(config: CoatiPayConfig, opts: RequestOptions): 
     path: opts.path,
     status: res.status,
     latency_ms: Date.now() - start,
-    node_route: typeof data.node_operator === 'string' ? data.node_operator : null,
+    node_route: typeof cuerpo?.node_operator === 'string' ? cuerpo.node_operator : null,
   })
 
-  if (!res.ok) {
-    throw classifyError(data.error as Parameters<typeof classifyError>[0])
+  if (!esJson) {
+    throw new NetworkError(`Response is not JSON (HTTP ${res.status}): ${url}`, causa, res.status)
   }
+  if (res.ok) return data as T
 
-  return data as T
+  // A CoatiPay error is an object whose `error` is an object with a non-empty
+  // `code`. Anything else (Fastify's default error, a proxy's JSON) is not.
+  const error = cuerpo?.error
+  if (!esObjeto(error) || typeof error.code !== 'string' || error.code === '') {
+    throw new NetworkError(`Response is not a CoatiPay error (HTTP ${res.status}): ${url}`, data, res.status)
+  }
+  throw classifyError({
+    // A code this version does not know (a newer API) becomes the base class.
+    code: error.code as CoatiPayErrorCode,
+    message: typeof error.message === 'string' ? error.message : 'Unknown error',
+    param: typeof error.param === 'string' ? error.param : null,
+    doc_url: typeof error.doc_url === 'string' ? error.doc_url : docUrl(error.code),
+  })
 }
+
+const esObjeto = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v)
 
 export { NetworkError }
