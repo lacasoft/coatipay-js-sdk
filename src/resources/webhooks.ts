@@ -51,6 +51,20 @@ export interface DeadLetter {
   payload: Record<string, unknown>
 }
 
+/** An endpoint right after its signing secret was rotated. */
+export interface RotatedWebhookSecret {
+  id: string
+  url: string
+  events: WebhookEventType[]
+  /** The new signing secret. Only returned here: store it. */
+  secret: string
+  /**
+   * Until when (seconds) deliveries are also signed with the previous secret;
+   * `null` if it no longer signs.
+   */
+  previous_secret_expires_at: number | null
+}
+
 export class Webhooks {
   constructor(private config: CoatiPayConfig) {}
 
@@ -66,6 +80,34 @@ export class Webhooks {
       method: 'POST',
       path: '/webhooks',
       body: { url, events },
+    })
+  }
+
+  /**
+   * Rotate an endpoint's signing secret. The new `secret` is only returned
+   * here: store it. Secret key.
+   *
+   * The previous secret keeps signing next to the new one for
+   * `keepPreviousFor` seconds — 24 h by default, up to 7 days. Meanwhile every
+   * delivery carries two `v1` signatures and `verify` accepts either, so you
+   * can change the secret on your server without dropping a delivery. With
+   * `keepPreviousFor: 0` the previous secret stops signing at once: for one
+   * that leaked. Only two secrets ever coexist: rotating again within the
+   * window retires the oldest.
+   *
+   * @example
+   * const { secret, previous_secret_expires_at } = await relay.webhooks.rotateSecret('we_…')
+   */
+  async rotateSecret(
+    id: string,
+    options: { keepPreviousFor?: number } = {},
+  ): Promise<RotatedWebhookSecret> {
+    return request(this.config, {
+      method: 'POST',
+      path: `/webhooks/${encodeURIComponent(id)}/rotate_secret`,
+      ...(options.keepPreviousFor !== undefined
+        ? { body: { keep_previous_for: options.keepPreviousFor } }
+        : {}),
     })
   }
 
