@@ -12,6 +12,12 @@
  *     payments sin que el payer tenga ETH); no se puede deferir ni
  *     lazy-loadear sin regresión de UX (el merchant haría 2 imports
  *     distintos para el mismo flow).
+ *   - 2026-10-06: subido a ESM 22 KB (CJS sigue en 25 KB).
+ *     Razón: `webhooks.rotateSecret` (rotar el secreto de un webhook). El ESM
+ *     estaba a 74 bytes del límite (20 406 de 20 480), así que no cabía ningún
+ *     método nuevo; este añade ~1 KB, de los que ~0,75 KB son su comentario
+ *     de documentación, que el bundle conserva (no se minifica). Queda en
+ *     21,4 KB.
  *
  * Si en el futuro el bundle pasa de 30 KB ESM, considerar split de
  * entries (e.g. `@lacasoft/coatipay-sdk/auth` como subpath export) en lugar
@@ -25,8 +31,8 @@ const SDK_ROOT = resolve(__dirname, '../../../')
 const DIST_ESM = resolve(SDK_ROOT, 'dist/index.mjs')
 const DIST_CJS = resolve(SDK_ROOT, 'dist/index.js')
 
-// Límites en bytes — bumped 2026-05-14 con la inclusión de helpers EIP-712.
-const ESM_LIMIT_BYTES = 20 * 1024 // 20 KB
+// Límites en bytes — ver el historial de arriba.
+const ESM_LIMIT_BYTES = 22 * 1024 // 22 KB
 const CJS_LIMIT_BYTES = 25 * 1024 // 25 KB (CJS tiene overhead de interop)
 
 describe('Criterio 7 — Bundle size', () => {

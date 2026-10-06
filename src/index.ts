@@ -67,7 +67,12 @@ export {
   USDC_ADDRESSES,
 } from './lib/eip712'
 export type { LogEntry, CoatiPayConfig } from './lib/types'
-export type { DeadLetter, VerifyOptions, WebhookSignatureReason } from './resources/webhooks'
+export type {
+  DeadLetter,
+  RotatedWebhookSecret,
+  VerifyOptions,
+  WebhookSignatureReason,
+} from './resources/webhooks'
 export { WebhookSignatureError } from './resources/webhooks'
 export type {
   SubmitAuthorizationBatchResponse,

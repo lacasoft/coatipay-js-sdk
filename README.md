@@ -72,10 +72,15 @@ app.post('/webhooks', express.raw({ type: 'application/json' }), (req, res) => {
   `timestamp_out_of_tolerance` or `no_matching_signature`.
 - Events: `payment_intent.created`, `payment_intent.settled`, `payment_intent.expired`,
   `payment_intent.cancelled`.
-- **Changing the secret.** The API does not rotate secrets yet. Register a second endpoint
-  with the same URL, verify with either secret while both exist (the same event arrives
-  through each, with the same `event.id`), then delete the old one. `verify` already
-  accepts a header with several `v1` signatures, for when the API signs with two.
+- **Rotating the secret.** `rotateSecret` returns a new secret — once: store it. The
+  previous one keeps signing next to it for 24 hours (`keepPreviousFor`, in seconds, up to
+  7 days), and `verify` accepts either, so you change the secret on your server without
+  dropping a delivery. If a secret leaked, `keepPreviousFor: 0` retires it at once.
+
+  ```typescript
+  const { secret, previous_secret_expires_at } = await relay.webhooks.rotateSecret('we_…')
+  await relay.webhooks.rotateSecret('we_…', { keepPreviousFor: 0 }) // leaked: stop now
+  ```
 - **Deliveries that exhausted their retries** stay in a dead-letter queue:
 
   ```typescript

@@ -211,6 +211,67 @@ describe('Webhooks.register', () => {
   })
 })
 
+describe('Webhooks.rotateSecret', () => {
+  const rotado = {
+    id: 'we_1',
+    url: 'https://example.com/hook',
+    events: ['payment_intent.settled'],
+    secret: 'whsec_nuevo',
+    previous_secret_expires_at: 1_790_086_400,
+  }
+
+  it('pide POST /webhooks/:id/rotate_secret, sin cuerpo: el plazo lo pone la API (24 h)', async () => {
+    mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve(rotado) })
+    const r = await client.webhooks.rotateSecret('we_1')
+
+    const [url, opts] = mockFetch.mock.calls[0]!
+    expect(url).toBe('https://api.test.coatipay.com/v1/webhooks/we_1/rotate_secret')
+    expect(opts.method).toBe('POST')
+    expect(opts.body).toBeUndefined()
+    // Sin cuerpo no se declara JSON: la API rechazaría un cuerpo vacío.
+    expect(opts.headers['Content-Type']).toBeUndefined()
+    expect(r).toEqual(rotado)
+  })
+
+  it('con keepPreviousFor manda keep_previous_for, también cuando es 0', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ ...rotado, previous_secret_expires_at: null }),
+    })
+    const r = await client.webhooks.rotateSecret('we_1', { keepPreviousFor: 0 })
+    await client.webhooks.rotateSecret('we_1', { keepPreviousFor: 3600 })
+
+    const cuerpos = mockFetch.mock.calls.map(([, opts]) => JSON.parse(opts.body))
+    expect(cuerpos).toEqual([{ keep_previous_for: 0 }, { keep_previous_for: 3600 }])
+    expect(mockFetch.mock.calls[0]![1].headers['Content-Type']).toBe('application/json')
+    expect(r.previous_secret_expires_at).toBeNull()
+  })
+
+  it('el id va escapado en la ruta', async () => {
+    mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve(rotado) })
+    await client.webhooks.rotateSecret('we_1/../otra')
+    expect(mockFetch.mock.calls[0]![0]).toBe(
+      'https://api.test.coatipay.com/v1/webhooks/we_1%2F..%2Fotra/rotate_secret',
+    )
+  })
+
+  it('durante la ventana, verify acepta la entrega con el secreto nuevo y con el anterior', () => {
+    const payload = JSON.stringify({ id: 'evt_r', type: 'payment_intent.settled', data: {} })
+    const t = Math.floor(Date.now() / 1000)
+    const firma = (secreto: string) =>
+      createHmac('sha256', secreto).update(`${t}.${payload}`).digest('hex')
+    // Como la manda la API tras rotar: primero la del nuevo, después la del anterior.
+    const cabecera = `t=${t},v1=${firma('whsec_nuevo')},v1=${firma('whsec_anterior')}`
+
+    expect(client.webhooks.verify(payload, cabecera, 'whsec_nuevo').id).toBe('evt_r')
+    expect(client.webhooks.verify(payload, cabecera, 'whsec_anterior').id).toBe('evt_r')
+    expect(() => client.webhooks.verify(payload, cabecera, 'whsec_otro')).toThrow(
+      expect.objectContaining({ reason: 'no_matching_signature' }),
+    )
+  })
+})
+
 describe('Webhooks — DLQ', () => {
   const entrega = {
     id: 'dlq_1',

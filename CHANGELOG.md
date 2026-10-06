@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.1.6 — 2026-10-06
+
+### Added
+
+- **`webhooks.rotateSecret(id, { keepPreviousFor })`**: rotates an endpoint's
+  signing secret (`POST /v1/webhooks/:id/rotate_secret`) and returns the new
+  one, once. The previous secret keeps signing next to it for `keepPreviousFor`
+  seconds — 24 h by default, up to 7 days — and `verify` accepts either, so the
+  secret can be changed without dropping a delivery. `keepPreviousFor: 0`
+  retires the previous secret at once, for one that leaked. Exports the
+  `RotatedWebhookSecret` type.
+
+### Docs
+
+- README: rotating a webhook secret. The workaround of registering a second
+  endpoint is no longer needed.
+
 ## 0.1.5 — 2026-09-29
 
 ### Changed
