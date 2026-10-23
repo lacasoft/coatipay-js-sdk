@@ -1,15 +1,18 @@
-import { type Hex, recoverTypedDataAddress } from 'viem'
+import { encodeAbiParameters, type Hex, keccak256, recoverTypedDataAddress, toHex } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { describe, expect, it } from 'vitest'
 import {
   buildReceiveAuthorizationTypedData,
-  intentIdToBytes32,
+  intentIdOf,
+  intentRef,
   signReceiveAuthorization,
   splitSignature,
   USDC_ADDRESSES,
 } from '../lib/eip712'
 
 const HUB = '0x1111111111111111111111111111111111111111' as const
+/// La cartera del comercio del cobro (`merchant_wallet`): entra en el nonce.
+const MERCHANT = '0x2222222222222222222222222222222222222222' as const
 const PAYER_KEY = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d' as Hex
 const PAYER_ADDR = privateKeyToAccount(PAYER_KEY).address
 
@@ -20,6 +23,7 @@ describe('buildReceiveAuthorizationTypedData', () => {
       amount: 5_000_000n,
       settlementHub: HUB,
       chain: 'base-sepolia',
+      merchant: MERCHANT,
       intentId: 'pi_test_001',
       validAfter: 0n,
       validBefore: 1_700_001_000n,
@@ -37,7 +41,7 @@ describe('buildReceiveAuthorizationTypedData', () => {
       value: 5_000_000n,
       validAfter: 0n,
       validBefore: 1_700_001_000n,
-      nonce: intentIdToBytes32('pi_test_001'),
+      nonce: intentIdOf(MERCHANT, 'pi_test_001'),
     })
 
     // Field types match the ERC-3009 spec exactly
@@ -55,6 +59,7 @@ describe('buildReceiveAuthorizationTypedData', () => {
       amount: 1n,
       settlementHub: HUB,
       chain: 'base',
+      merchant: MERCHANT,
       intentId: 'pi_test_001',
     })
     expect(typed.domain.chainId).toBe(8453)
@@ -63,7 +68,30 @@ describe('buildReceiveAuthorizationTypedData', () => {
   })
 
   it('rechaza un bytes32 ya derivado, que se hashearía dos veces', () => {
-    expect(() => intentIdToBytes32(intentIdToBytes32('pi_abc123'))).toThrow(/already-derived/)
+    expect(() => intentIdOf(MERCHANT, intentRef('pi_abc123'))).toThrow(/already-derived/)
+  })
+
+  it('el id on-chain es keccak256(abi.encode(merchant, intentRef(id))), como el hub (ADR-009)', () => {
+    expect(intentIdOf(MERCHANT, 'pi_abc123')).toBe(
+      keccak256(
+        encodeAbiParameters(
+          [{ type: 'address' }, { type: 'bytes32' }],
+          [MERCHANT, keccak256(toHex('pi_abc123'))],
+        ),
+      ),
+    )
+  })
+
+  it('el mismo cobro con otra cartera da otro nonce: la firma fija a quién se paga', () => {
+    expect(intentIdOf(MERCHANT, 'pi_abc123')).not.toBe(intentIdOf(HUB, 'pi_abc123'))
+  })
+
+  it('sin la cartera del comercio no hay nonce: TypeError', () => {
+    expect(() => intentIdOf('', 'pi_abc123')).toThrow(TypeError)
+    expect(() => intentIdOf(null as unknown as string, 'pi_abc123')).toThrow(TypeError)
+    expect(() => intentIdOf('0x0000000000000000000000000000000000000000', 'pi_abc123')).toThrow(
+      TypeError,
+    )
   })
 
   it('deriva el nonce del id textual, sin que nadie calcule el hash', () => {
@@ -72,9 +100,10 @@ describe('buildReceiveAuthorizationTypedData', () => {
       amount: 5_000_000n,
       settlementHub: HUB,
       chain: 'base-sepolia',
+      merchant: MERCHANT,
       intentId: 'pi_abc123',
     })
-    expect(td.message.nonce).toBe(intentIdToBytes32('pi_abc123'))
+    expect(td.message.nonce).toBe(intentIdOf(MERCHANT, 'pi_abc123'))
     expect(td.message.nonce).toMatch(/^0x[0-9a-f]{64}$/)
   })
 
@@ -86,8 +115,9 @@ describe('buildReceiveAuthorizationTypedData', () => {
       settlementHub: HUB,
       chain: 'base-sepolia',
       intentId,
+      merchant: MERCHANT,
     })
-    expect(td.message.nonce).toBe(intentIdToBytes32(intentId))
+    expect(td.message.nonce).toBe(intentIdOf(MERCHANT, intentId))
   })
 
   it('defaults validAfter=0 and validBefore≈now+30min', () => {
@@ -97,6 +127,7 @@ describe('buildReceiveAuthorizationTypedData', () => {
       amount: 1n,
       settlementHub: HUB,
       chain: 'base-sepolia',
+      merchant: MERCHANT,
       intentId: 'pi_test_001',
     })
     const after = Math.floor(Date.now() / 1000)
@@ -114,6 +145,7 @@ describe('signReceiveAuthorization', () => {
       amount: 5_000_000n,
       settlementHub: HUB,
       chain: 'base-sepolia' as const,
+      merchant: MERCHANT,
       intentId: 'pi_test_001',
       validAfter: 0n,
       validBefore: 9_999_999_999n,
@@ -139,6 +171,7 @@ describe('signReceiveAuthorization', () => {
         amount: 1_000n,
         settlementHub: HUB,
         chain: 'base-sepolia',
+        merchant: MERCHANT,
         intentId: 'pi_test_001',
       },
       PAYER_KEY,

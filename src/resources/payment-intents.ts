@@ -100,11 +100,14 @@ export class PaymentIntents {
    * For server-side signing with a private key, prefer `signAuthorization`.
    *
    * @example (browser/wallet flow)
+   * const intent = await relay.paymentIntents.retrieve('pi_...')
    * const typed = relay.paymentIntents.buildAuthorizationTypedData({
    *   payer: '0xPayer...',
-   *   amount: 5_000_000n,                          // 5 USDC (6 decimals)
+   *   amount: BigInt(intent.amount),               // USDC base units (6 decimals)
    *   settlementHub: '0xHub...',
    *   chain: 'base-sepolia',
+   *   intentId: intent.id,
+   *   merchant: intent.merchant_wallet,            // goes into the nonce (ADR-009)
    * })
    * const signature = await walletClient.signTypedData(typed)
    * await relay.paymentIntents.submitAuthorization(intentId, {
@@ -125,7 +128,14 @@ export class PaymentIntents {
    *
    * @example
    * const auth = await relay.paymentIntents.signAuthorization(
-   *   { payer, amount: 5_000_000n, settlementHub, chain: 'base-sepolia' },
+   *   {
+   *     payer,
+   *     amount: BigInt(intent.amount),
+   *     settlementHub,
+   *     chain: 'base-sepolia',
+   *     intentId: intent.id,
+   *     merchant: intent.merchant_wallet,
+   *   },
    *   privateKey,
    * )
    * await relay.paymentIntents.submitAuthorization(intentId, auth)

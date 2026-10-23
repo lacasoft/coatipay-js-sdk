@@ -61,7 +61,8 @@ export type {
 // ── ERC-3009 / ADR-003 gasless settlement ────────────────────
 export {
   buildReceiveAuthorizationTypedData,
-  intentIdToBytes32,
+  intentIdOf,
+  intentRef,
   signReceiveAuthorization,
   splitSignature,
   USDC_ADDRESSES,

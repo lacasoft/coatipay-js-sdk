@@ -8,7 +8,8 @@ import {
   classifyError,
   CoatiPay,
   CoatiPaySDKError,
-  intentIdToBytes32,
+  intentIdOf,
+  intentRef,
   NetworkError,
   signReceiveAuthorization,
   WebhookSignatureError,
@@ -34,13 +35,14 @@ beforeEach(() => mockFetch.mockReset())
 
 describe('vectores: nonce', () => {
   for (const c of vector('nonce.json').casos) {
-    it(`${JSON.stringify(c.intent_id)}`, () => {
-      expect(intentIdToBytes32(c.intent_id)).toBe(c.nonce)
+    it(`${JSON.stringify(c.intent_id)} · ${c.merchant}`, () => {
+      expect(intentRef(c.intent_id)).toBe(c.ref)
+      expect(intentIdOf(c.merchant, c.intent_id)).toBe(c.nonce)
     })
   }
   for (const r of vector('nonce.json').rechazados) {
-    it(`rechaza ${JSON.stringify(r.intent_id)} (${r.motivo})`, () => {
-      expect(() => intentIdToBytes32(r.intent_id)).toThrow(TypeError)
+    it(`rechaza ${JSON.stringify(r.intent_id)} · ${r.merchant} (${r.motivo})`, () => {
+      expect(() => intentIdOf(r.merchant, r.intent_id)).toThrow(TypeError)
     })
   }
 })
@@ -54,6 +56,7 @@ describe('vectores: autorización ERC-3009', () => {
       settlementHub: c.entrada.settlement_hub as Address,
       chain: c.entrada.chain,
       intentId: c.entrada.intent_id,
+      merchant: c.entrada.merchant,
       validAfter: BigInt(c.entrada.valid_after),
       validBefore: BigInt(c.entrada.valid_before),
     }
