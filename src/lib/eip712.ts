@@ -19,7 +19,18 @@ import {
   USDC_DOMAIN_NAMES,
   USDC_DOMAIN_VERSION,
 } from '@lacasoft/coatipay-protocol'
-import { type Address, type Hex, hexToBytes, keccak256, serializeSignature, toHex } from 'viem'
+import {
+  type Address,
+  encodeAbiParameters,
+  getAddress,
+  type Hex,
+  hexToBytes,
+  isAddress,
+  keccak256,
+  serializeSignature,
+  toHex,
+  zeroAddress,
+} from 'viem'
 import { sign } from 'viem/accounts'
 
 export type { SupportedChain }
@@ -32,13 +43,11 @@ export { USDC_ADDRESSES }
 const DEFAULT_VALIDITY_WINDOW_SECONDS = 30 * 60
 
 /**
- * Identificador on-chain de un intent, a partir del `pi_…` que devuelve la API.
- *
- * Es `keccak256(utf8(id))`, la misma derivación que usan el contrato y el
- * daemon. Se exporta porque quien construya la autorización a mano necesita el
- * mismo valor, y calcularlo distinto produce una firma que no sirve.
+ * La referencia de un intent: `keccak256(utf8(id))` del `pi_…` que devuelve la
+ * API. Hasta 0.1.x era el id on-chain entero; desde 0.2.0 (ADR-009) es la
+ * mitad: ver `intentIdOf`.
  */
-export function intentIdToBytes32(intentId: string): Hex {
+export function intentRef(intentId: string): Hex {
   // Vacío o solo espacios: su hash sería un nonce que parece válido y no es el
   // de ningún intent (vectores compartidos, `nonce.json` → `rechazados`).
   if (!intentId?.trim()) throw new TypeError('intentId is required')
@@ -53,6 +62,29 @@ export function intentIdToBytes32(intentId: string): Hex {
   return keccak256(toHex(intentId))
 }
 
+/**
+ * Identificador on-chain de un intent, que es también el nonce de la
+ * autorización: `keccak256(abi.encode(merchant, intentRef(id)))`, lo mismo que
+ * `SettlementHub.intentIdOf` (ADR-009 §3). Lleva dentro la cartera del
+ * comercio, así que la firma del pagador fija también a quién paga.
+ *
+ * `merchant` es el `merchant_wallet` del PaymentIntent. Se exporta porque quien
+ * construya la autorización a mano necesita el mismo valor, y calcularlo
+ * distinto produce una firma que no sirve.
+ */
+export function intentIdOf(merchant: string, intentId: string): Hex {
+  if (!merchant || !isAddress(merchant, { strict: false })) {
+    throw new TypeError(
+      `merchant must be the payment's merchant_wallet (an address); got ${String(merchant)}`,
+    )
+  }
+  const comercio = getAddress(merchant)
+  if (comercio === zeroAddress) throw new TypeError('merchant must not be the zero address')
+  return keccak256(
+    encodeAbiParameters([{ type: 'address' }, { type: 'bytes32' }], [comercio, intentRef(intentId)]),
+  )
+}
+
 export interface BuildAuthorizationParams {
   /** Payer address — the `from` of the USDC transfer. Must match the signer. */
   payer: Address
@@ -62,6 +94,12 @@ export interface BuildAuthorizationParams {
   settlementHub: Address
   /** Which chain — picks USDC contract address + chainId. */
   chain: SupportedChain
+  /**
+   * La cartera del comercio a la que va el pago: el `merchant_wallet` del
+   * PaymentIntent. Entra en el nonce (ADR-009): la firma solo sirve para pagar
+   * a esta cartera.
+   */
+  merchant: string
   /**
    * El intent que se está pagando: el `pi_…` que devolvió la API.
    *
@@ -113,8 +151,9 @@ export function buildReceiveAuthorizationTypedData(
   const nowSeconds = BigInt(Math.floor(Date.now() / 1000))
   const validAfter = params.validAfter ?? 0n
   const validBefore = params.validBefore ?? nowSeconds + BigInt(DEFAULT_VALIDITY_WINDOW_SECONDS)
-  // El nonce ES el intent: así la firma solo sirve para pagar ese intent.
-  const nonce = intentIdToBytes32(params.intentId)
+  // El nonce ES el intent, con la cartera del comercio dentro: así la firma
+  // solo sirve para pagar ese intent, a esa cartera.
+  const nonce = intentIdOf(params.merchant, params.intentId)
 
   return {
     domain: {
