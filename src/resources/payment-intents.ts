@@ -1,5 +1,5 @@
 import type { CreatePaymentIntentParams, PaymentIntent } from '@lacasoft/coatipay-protocol'
-import { MAX_BATCH_SIZE } from '@lacasoft/coatipay-protocol'
+import { isPaymentIntentId, MAX_BATCH_SIZE } from '@lacasoft/coatipay-protocol'
 import type { Address, Hex } from 'viem'
 import {
   splitSignature as _splitSignature,
@@ -54,21 +54,25 @@ export class PaymentIntents {
 
   /**
    * Retrieve a payment intent by ID.
+   *
+   * @throws TypeError if `id` is not a payment intent id (`pi_…`); no request is made.
    */
   async retrieve(id: string): Promise<PaymentIntent> {
     return request<PaymentIntent>(this.config, {
       method: 'GET',
-      path: `/payment_intents/${id}`,
+      path: rutaDelCobro(id),
     })
   }
 
   /**
    * Cancel a payment intent (only valid while it is in 'created' state).
+   *
+   * @throws TypeError if `id` is not a payment intent id (`pi_…`); no request is made.
    */
   async cancel(id: string): Promise<PaymentIntent> {
     return request<PaymentIntent>(this.config, {
       method: 'POST',
-      path: `/payment_intents/${id}/cancel`,
+      path: `${rutaDelCobro(id)}/cancel`,
     })
   }
 
@@ -161,7 +165,7 @@ export class PaymentIntents {
   ): Promise<SubmitAuthorizationResponse> {
     return request<SubmitAuthorizationResponse>(this.config, {
       method: 'POST',
-      path: `/payment_intents/${intentId}/authorize`,
+      path: `${rutaDelCobro(intentId)}/authorize`,
       body: serializeAuthorization(auth),
     })
   }
@@ -208,6 +212,19 @@ export class PaymentIntents {
 }
 
 // ── Wire helpers ────────────────────────────────────────────────────────
+
+/**
+ * La ruta de un cobro. El id va dentro de la ruta, así que se comprueba su
+ * forma (`pi_…`, vectores compartidos `ids.json`) antes de hacer la petición, y
+ * se codifica: con `/`, `?` o `..` la petición, con la clave del comercio,
+ * llegaría a otra ruta de la API.
+ */
+function rutaDelCobro(id: string): string {
+  if (!isPaymentIntentId(id)) {
+    throw new TypeError(`Invalid payment intent id (expected pi_…): ${JSON.stringify(String(id).slice(0, 64))}`)
+  }
+  return `/payment_intents/${encodeURIComponent(id)}`
+}
 
 /** Convert SignedAuthorization (with bigint fields) to JSON-safe shape. */
 function serializeAuthorization(auth: SignedAuthorization): {

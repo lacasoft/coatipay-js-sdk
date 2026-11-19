@@ -7,11 +7,32 @@ import {
 import type { CoatiPayConfig } from '../lib/types'
 import { request } from '../lib/types'
 
+/**
+ * Lo que el hook de `middleware()` usa de la petición de Fastify
+ * (`FastifyRequest`). Tipos estructurales: el SDK no depende de Fastify.
+ */
+export interface X402HookRequest {
+  url: string
+  headers: Record<string, string | string[] | undefined>
+}
+
+/**
+ * Lo que el hook de `middleware()` usa de la respuesta de Fastify
+ * (`FastifyReply`): `reply.code(402).header(…).send(…)`.
+ */
+export interface X402HookReply {
+  code(statusCode: number): X402HookReply
+  header(name: string, value: string): X402HookReply
+  send(payload?: unknown): X402HookReply
+}
+
 export class X402 {
   constructor(private config: CoatiPayConfig) {}
 
   /**
-   * Returns a Fastify preHandler hook that requires x402 payment.
+   * Returns a Fastify `preHandler` hook: without a verified `X-PAYMENT` it
+   * answers 402 and the route does not run. For Web `Request` handlers use
+   * `handler()`.
    *
    * @example
    * app.addHook('preHandler', relay.x402.middleware({
@@ -22,11 +43,19 @@ export class X402 {
    */
   middleware(
     opts: X402MiddlewareOptions,
-  ): (req: Request, reply: Response) => Promise<Response | undefined> {
-    return async (req: Request, _reply: Response): Promise<Response | undefined> => {
-      const challenge = await this.gate(req, opts)
-      // challenge === null means payment was verified — let the request continue
-      return challenge ?? undefined
+  ): (req: X402HookRequest, reply: X402HookReply) => Promise<X402HookReply | undefined> {
+    return async (req, reply) => {
+      // Sin un `reply` de Fastify no hay cómo cortar la petición: mejor un
+      // error (la ruta no corre) que dejarla pasar sin cobrar.
+      if (typeof reply?.code !== 'function' || typeof reply.send !== 'function') {
+        throw new TypeError('x402.middleware() is a Fastify hook; for Web Request use x402.handler()')
+      }
+      const rechazo = await this.check(cabeceraDePago(req.headers), req.url, opts)
+      // null: pago verificado, sigue la ruta.
+      if (rechazo === null) return undefined
+      // En un hook async, Fastify ignora lo que se devuelva y sigue con la
+      // ruta, salvo que se responda con `reply` y se devuelva `reply`.
+      return reply.code(402).header('content-type', 'application/json').send(rechazo)
     }
   }
 
@@ -47,34 +76,26 @@ export class X402 {
     }
   }
 
-  /**
-   * Shared gate: extract X-PAYMENT, verify against the API, and either
-   * return a 402 Response (challenge or rejection) or null when payment
-   * is valid and the caller should proceed.
-   */
   private async gate(req: Request, opts: X402MiddlewareOptions): Promise<Response | null> {
-    const paymentHeader =
-      req.headers instanceof Headers
-        ? req.headers.get('x-payment')
-        : (req.headers as unknown as Record<string, string>)['x-payment']
+    // Para `handler()`: un 402 como `Response`, o null si el pago es válido.
+    const rechazo = await this.check(cabeceraDePago(req.headers), req.url, opts)
+    if (rechazo === null) return null
+    return new Response(JSON.stringify(rechazo), {
+      status: 402,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
 
-    if (!paymentHeader) {
-      const body = this.buildPaymentRequired(opts, req.url)
-      return new Response(JSON.stringify(body), {
-        status: 402,
-        headers: { 'Content-Type': 'application/json' },
-      })
-    }
-
+  private async check(
+    paymentHeader: string | undefined,
+    resource: string,
+    opts: X402MiddlewareOptions,
+  ): Promise<X402PaymentRequired | { error: string } | null> {
+    // Sin `X-PAYMENT`, los requisitos de pago; con él, se verifica en la API.
+    // Devuelve el cuerpo del 402, o null si el pago es válido.
+    if (!paymentHeader) return this.buildPaymentRequired(opts, resource)
     const valid = await this.verify(paymentHeader, opts)
-    if (!valid) {
-      return new Response(JSON.stringify({ error: 'Payment verification failed' }), {
-        status: 402,
-        headers: { 'Content-Type': 'application/json' },
-      })
-    }
-
-    return null
+    return valid ? null : { error: 'Payment verification failed' }
   }
 
   private buildPaymentRequired(opts: X402MiddlewareOptions, resource: string): X402PaymentRequired {
@@ -116,4 +137,13 @@ export class X402 {
       return false
     }
   }
+}
+
+/** `X-PAYMENT` de un `Headers` web o de las cabeceras de Node/Fastify. */
+function cabeceraDePago(
+  headers: Headers | Record<string, string | string[] | undefined>,
+): string | undefined {
+  if (headers instanceof Headers) return headers.get('x-payment') ?? undefined
+  const valor = headers?.['x-payment']
+  return Array.isArray(valor) ? valor[0] : valor
 }

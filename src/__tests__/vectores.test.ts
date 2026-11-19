@@ -11,6 +11,7 @@ import {
   intentIdOf,
   intentRef,
   NetworkError,
+  PAYMENT_INTENT_ID_PATTERN,
   signReceiveAuthorization,
   WebhookSignatureError,
 } from '../index'
@@ -43,6 +44,47 @@ describe('vectores: nonce', () => {
   for (const r of vector('nonce.json').rechazados) {
     it(`rechaza ${JSON.stringify(r.intent_id)} · ${r.merchant} (${r.motivo})`, () => {
       expect(() => intentIdOf(r.merchant, r.intent_id)).toThrow(TypeError)
+    })
+  }
+})
+
+describe('vectores: id de cobro en la ruta', () => {
+  const ids = vector('ids.json')
+  const relay = new CoatiPay({ apiKey: 'sk_test_vectores', baseUrl: 'https://api.test' })
+  const auth = {
+    payer: '0x0000000000000000000000000000000000000001' as Address,
+    validAfter: 0n,
+    validBefore: 1n,
+    nonce: `0x${'00'.repeat(32)}` as Hex,
+    signature: '0x00' as Hex,
+  }
+  const llamadas = (id: string) => [
+    ['GET', `/payment_intents/${id}`, () => relay.paymentIntents.retrieve(id)],
+    ['POST', `/payment_intents/${id}/cancel`, () => relay.paymentIntents.cancel(id)],
+    ['POST', `/payment_intents/${id}/authorize`, () => relay.paymentIntents.submitAuthorization(id, auth)],
+  ] as const
+
+  it('el patrón es el del protocolo', () => {
+    expect(ids.patron).toBe(PAYMENT_INTENT_ID_PATTERN.source)
+  })
+  for (const id of ids.aceptados as string[]) {
+    it(`acepta ${JSON.stringify(id)}: la petición va a su ruta`, async () => {
+      for (const [metodo, ruta, llamar] of llamadas(id)) {
+        mockFetch.mockReset()
+        mockFetch.mockResolvedValueOnce(new Response('{}', { status: 200 }))
+        await llamar()
+        const [url, opciones] = mockFetch.mock.calls[0] as [string, { method: string }]
+        expect(url).toBe(`https://api.test/v1${ruta}`)
+        expect(opciones.method).toBe(metodo)
+      }
+    })
+  }
+  for (const r of ids.rechazados as { id: string; motivo: string }[]) {
+    it(`rechaza ${JSON.stringify(r.id)} (${r.motivo}) sin hacer la petición`, async () => {
+      for (const [, , llamar] of llamadas(r.id)) {
+        await expect(llamar()).rejects.toThrow(TypeError)
+      }
+      expect(mockFetch).not.toHaveBeenCalled()
     })
   }
 })
