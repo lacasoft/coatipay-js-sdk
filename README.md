@@ -114,6 +114,9 @@ and PHP SDKs.
 
 ## x402 — micropayments for AI agents
 
+**Fastify** — a `preHandler` hook. Without a verified payment it answers 402 and the route
+does not run (use **0.2.1 or later**: in 0.1.0–0.2.0 this hook did not stop the request):
+
 ```typescript
 // Gate any endpoint behind a per-request micropayment.
 app.addHook(
@@ -124,6 +127,17 @@ app.addHook(
     chain: 'base',
   }),
 )
+```
+
+**Web `Request` handlers** (Next.js App Router, Hono, Bun, …) — wrap the handler:
+
+```typescript
+export const GET = relay.x402.handler({
+  price: 300_000,
+  currency: 'usdc',
+  chain: 'base',
+  handler: async (req) => Response.json({ data: 'paid content' }),
+})
 ```
 
 Any HTTP client that speaks x402 — including AI agents over MCP — can pay and consume your

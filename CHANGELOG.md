@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.2.1 — 2026-11-19
+
+Security fixes. **Upgrade if you use `x402.middleware()` with Fastify, or pass
+a payment id that you did not get from the API to `retrieve`, `cancel` or
+`submitAuthorization`.**
+
+### Security
+
+- **`x402.middleware()` now stops the request in Fastify.** Up to 0.2.0 the
+  hook returned a Web `Response`; Fastify ignores the value an async hook
+  returns, so the protected route ran without payment (no `X-PAYMENT`, or one
+  the API rejected). The hook now answers the 402 through `reply` and returns
+  it. Called without a Fastify `reply` (e.g. as Express middleware) it throws
+  instead of letting the request through; for Web `Request` handlers use
+  `x402.handler()`, which was not affected. Tested inside a real Fastify, as
+  the README registers it.
+- **Payment ids are validated and encoded before going into a request
+  path.** `paymentIntents.retrieve`, `cancel` and `submitAuthorization` put the
+  id into `/payment_intents/<id>…` as given: an id such as `../webhooks` sent
+  the request, with the merchant's secret key, to another API route. Now an id
+  that is not `pi_` followed by letters, digits, `_` or `-` throws `TypeError`
+  without making the request, and the id is URL-encoded. The rule is the
+  shared vector `ids.json` of `@lacasoft/coatipay-protocol` 0.2.1, the same in
+  the three SDKs.
+
+### Added
+
+- `isPaymentIntentId(id)` and `PAYMENT_INTENT_ID_PATTERN`, re-exported from
+  the protocol.
+- Types `X402HookRequest` and `X402HookReply`: what the hook uses of
+  Fastify's request and reply (structural; the SDK does not depend on Fastify).
+
+### Changed
+
+- Depends on `@lacasoft/coatipay-protocol` ^0.2.1.
+- Bundle size limit raised to 24 KB ESM / 27 KB CJS (see
+  `07-bundle-size.test.ts`).
+
 ## 0.2.0 — 2026-10-25
 
 For the SettlementHub of ADR-009. **Breaking**: an authorization signed with

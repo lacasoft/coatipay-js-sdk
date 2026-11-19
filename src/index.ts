@@ -44,7 +44,9 @@ export {
   classifyError,
   CoatiPaySDKError,
   ERROR_CATALOG,
+  isPaymentIntentId,
   NetworkError,
+  PAYMENT_INTENT_ID_PATTERN,
   PaymentError,
   RateLimitError,
   RoutingError,
@@ -79,3 +81,4 @@ export type {
   SubmitAuthorizationBatchResponse,
   SubmitAuthorizationResponse,
 } from './resources/payment-intents'
+export type { X402HookReply, X402HookRequest } from './x402/middleware'

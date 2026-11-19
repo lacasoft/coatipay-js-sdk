@@ -18,6 +18,13 @@
  *     método nuevo; este añade ~1 KB, de los que ~0,75 KB son su comentario
  *     de documentación, que el bundle conserva (no se minifica). Queda en
  *     21,4 KB.
+ *   - 2026-11-19 (0.2.1, arreglo de seguridad): subido a ESM 24 KB / CJS 27 KB.
+ *     Razón: el hook x402 para Fastify ahora responde el 402 con `reply` (antes
+ *     devolvía un `Response` que Fastify ignoraba y la ruta corría sin pago), y
+ *     los métodos de cobro validan y codifican el id antes de ponerlo en la
+ *     ruta. Es código necesario, ~0,9 KB, con los comentarios privados ya
+ *     pasados a `//` (que el bundle no conserva). Master estaba a 223 bytes
+ *     del límite. Queda en 22,65 KB ESM / 25,0 KB CJS.
  *
  * Si en el futuro el bundle pasa de 30 KB ESM, considerar split de
  * entries (e.g. `@lacasoft/coatipay-sdk/auth` como subpath export) en lugar
@@ -32,8 +39,8 @@ const DIST_ESM = resolve(SDK_ROOT, 'dist/index.mjs')
 const DIST_CJS = resolve(SDK_ROOT, 'dist/index.js')
 
 // Límites en bytes — ver el historial de arriba.
-const ESM_LIMIT_BYTES = 22 * 1024 // 22 KB
-const CJS_LIMIT_BYTES = 25 * 1024 // 25 KB (CJS tiene overhead de interop)
+const ESM_LIMIT_BYTES = 24 * 1024 // 24 KB
+const CJS_LIMIT_BYTES = 27 * 1024 // 27 KB (CJS tiene overhead de interop)
 
 describe('Criterio 7 — Bundle size', () => {
   it('el bundle ESM existe (build completado)', () => {
